@@ -1,4 +1,5 @@
 import {
+	IBinaryData,
 	IExecuteFunctions,
 	INodeExecutionData,
 	INodeType,
@@ -6,15 +7,18 @@ import {
 	NodeOperationError,
 } from 'n8n-workflow';
 
-export class ExampleNode implements INodeType {
+import fetch from 'node-fetch';
+import { PDFDocument, PDFForm, PDFTextField } from 'pdf-lib';
+
+export class DocFill implements INodeType {
 	description: INodeTypeDescription = {
-		displayName: 'Example Node',
-		name: 'exampleNode',
+		displayName: 'Doc Fill',
+		name: 'docFill',
 		group: ['transform'],
 		version: 1,
-		description: 'Basic Example Node',
+		description: 'Node made for filling a pdf form.',
 		defaults: {
-			name: 'Example Node',
+			name: 'Doc Fill',
 		},
 		inputs: ['main'],
 		outputs: ['main'],
@@ -22,12 +26,13 @@ export class ExampleNode implements INodeType {
 			// Node properties which the user gets displayed and
 			// can change on the node.
 			{
-				displayName: 'My String',
-				name: 'myString',
+				displayName: 'PDF Url',
+				name: 'pdfUrl',
 				type: 'string',
 				default: '',
 				placeholder: 'Placeholder value',
-				description: 'The description text',
+				description: 'URL where the PDF file can be downloaded.',
+				required: true,
 			},
 		],
 	};
@@ -39,18 +44,53 @@ export class ExampleNode implements INodeType {
 	async execute(this: IExecuteFunctions): Promise<INodeExecutionData[][]> {
 		const items = this.getInputData();
 
-		let item: INodeExecutionData;
-		let myString: string;
+		//let item: INodeExecutionData;
+		let fileUrl: string;
+		let arrayBuffer: ArrayBuffer;
+		let pdfDoc: PDFDocument;
+		let pdfForm: PDFForm;
+
+		const returnData: INodeExecutionData[] = [];
+
 
 		// Iterates over all input items and add the key "myString" with the
 		// value the parameter "myString" resolves to.
 		// (This could be a different value for each item in case it contains an expression)
 		for (let itemIndex = 0; itemIndex < items.length; itemIndex++) {
 			try {
-				myString = this.getNodeParameter('myString', itemIndex, '') as string;
-				item = items[itemIndex];
+				fileUrl = this.getNodeParameter('pdfUrl', itemIndex, '') as string;
 
-				item.json['myString'] = myString;
+				arrayBuffer = await fetch(fileUrl).then(res => res.arrayBuffer());
+
+				pdfDoc = await PDFDocument.load(arrayBuffer);
+
+				console.log(pdfDoc);
+
+				pdfForm = pdfDoc.getForm();
+
+				let pdfTextField: PDFTextField = pdfForm.getTextField("Nom et prénom ou raison sociale_2");
+				pdfTextField.setText("Roman Muzikantov");
+
+				let savedDoc = await pdfDoc.save();
+
+				console.log(savedDoc);
+
+				const binary = { 
+					["data"]: {
+						data: "",
+						fileName: 'fileName',
+						mimeType: 'mimeType'
+					} as IBinaryData
+				};
+				binary!['data'] = await this.helpers.prepareBinaryData(Buffer.from(savedDoc), 'test.pdf')
+
+				const json = {};
+				const result: INodeExecutionData = {
+					json,
+					binary
+				}
+
+				returnData.push(result);
 			} catch (error) {
 				// This node should never fail but we want to showcase how
 				// to handle errors.
@@ -71,6 +111,6 @@ export class ExampleNode implements INodeType {
 			}
 		}
 
-		return this.prepareOutputData(items);
+		return this.prepareOutputData(returnData);
 	}
 }
