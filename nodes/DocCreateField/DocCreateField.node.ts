@@ -11,8 +11,8 @@ import {
 } from 'n8n-workflow';
 
 
-import { isPDFDocument, fillForm, DocFillConfig } from './DocFillUtils';
-import { PDFDocument, PDFForm } from 'pdf-lib';
+import { isPDFDocument, DocCreateFieldConfig, createField } from './DocCreateFieldUtils';
+import { PDFDocument } from 'pdf-lib';
 
 const nodeOperationOptions: INodeProperties[] = [
 	{
@@ -37,19 +37,19 @@ const nodeOperationOptions: INodeProperties[] = [
 		type: 'json',
 		default: '',
 		description:
-			'JSON used to map the keys in the PDF form to the corresponding values',
+			'JSON defining the fields to be created in the PDF passed as input',
 	},
 ];
 
-export class DocFill implements INodeType {
+export class DocCreateField implements INodeType {
 	description: INodeTypeDescription = {
-		displayName: 'Doc Fill',
-		name: 'docFill',
+		displayName: 'Doc Create Field',
+		name: 'docCreateField',
 		group: ['transform'],
 		version: 1,
-		description: 'Node made for filling a pdf form.',
+		description: 'Node made for creating a field inside a PDF doc.',
 		defaults: {
-			name: 'Doc Fill',
+			name: 'Doc Create Field',
 		},
 		inputs: ['main'],
 		inputNames: ['Document'],
@@ -66,11 +66,10 @@ export class DocFill implements INodeType {
 		let dataPropertyName: string;
 		let dataPropertyNameOut: string;
 		let jsonString: string;
-		let docFillConfigs: DocFillConfig[];
+		let docCreateFieldConfigs: DocCreateFieldConfig[];
 		let docBinaryData: IBinaryData;
 		let docBuffer: Buffer;
 		let pdfDoc: PDFDocument;
-		let pdfForm: PDFForm;
 
 		const returnData: INodeExecutionData[] = [];
 
@@ -94,12 +93,12 @@ export class DocFill implements INodeType {
 				docBuffer = await this.helpers.getBinaryDataBuffer(itemIndex, dataPropertyName);
 				pdfDoc = await PDFDocument.load(docBuffer);
 
-				pdfForm = pdfDoc.getForm();
 
-				docFillConfigs = JSON.parse(jsonString);
+				docCreateFieldConfigs = JSON.parse(jsonString);
 
-				docFillConfigs.forEach((el) => {
-					fillForm(pdfForm, el);
+				docCreateFieldConfigs.forEach((el) => {
+					const pdfPage = pdfDoc.getPage(el.page);
+					createField(pdfPage, el);
 				})
 
 				let savedDoc = await pdfDoc.save();

@@ -31,7 +31,8 @@
   "n8n": {
     "n8nNodesApiVersion": 1,
     "nodes": [
-      "dist/nodes/DocFill/DocFill.node.js"
+      "dist/nodes/DocFill/DocFill.node.js",
+      "dist/nodes/DocCreateField/DocCreateField.node.js"
     ]
   },
   "devDependencies": {
