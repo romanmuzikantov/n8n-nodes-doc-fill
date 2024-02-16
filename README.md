@@ -26,7 +26,7 @@ interface DocFillConfig {
 ```
 
 * key: The key to find and retrieve the field in the PDF Form.
-* value: The value you want to insert for the retrieved field.
+* value: The value you want to insert for the retrieved field (must be 'true' (check) or 'false' (uncheck) for checkbox field type).
 * type: The type of field you want to retrieve (can be 'textfield', 'checkbox', 'dropdown' or 'radiogroup').
 
 ### Example
