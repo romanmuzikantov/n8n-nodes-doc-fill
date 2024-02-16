@@ -1,14 +1,45 @@
 import {
 	IBinaryData,
+	IBinaryKeyData,
 	IExecuteFunctions,
 	INodeExecutionData,
+	INodeProperties,
 	INodeType,
 	INodeTypeDescription,
+	IPairedItemData,
 	NodeOperationError,
 } from 'n8n-workflow';
 
-import fetch from 'node-fetch';
-import { PDFDocument, PDFForm, PDFTextField } from 'pdf-lib';
+
+import { isPDFDocument, fillForm, DocFillConfig } from './DocFillUtils';
+import { PDFDocument, PDFForm } from 'pdf-lib';
+
+const nodeOperationOptions: INodeProperties[] = [
+	{
+		displayName: 'Property Name',
+		name: 'dataPropertyName',
+		type: 'string',
+		default: 'data',
+		description:
+			'Name of the binary property which holds the document to be used',
+	},
+	{
+		displayName: 'Property Name Out',
+		name: 'dataPropertyNameOut',
+		type: 'string',
+		default: 'data',
+		description:
+			'Name of the binary property for the output',
+	},
+	{
+		displayName: 'Configuration JSON',
+		name: 'configurationJson',
+		type: 'json',
+		default: '',
+		description:
+			'JSON used to map the keys in the PDF form to the corresponding values',
+	},
+];
 
 export class DocFill implements INodeType {
 	description: INodeTypeDescription = {
@@ -21,86 +52,86 @@ export class DocFill implements INodeType {
 			name: 'Doc Fill',
 		},
 		inputs: ['main'],
+		inputNames: ['Document'],
 		outputs: ['main'],
 		properties: [
-			// Node properties which the user gets displayed and
-			// can change on the node.
-			{
-				displayName: 'PDF Url',
-				name: 'pdfUrl',
-				type: 'string',
-				default: '',
-				placeholder: 'Placeholder value',
-				description: 'URL where the PDF file can be downloaded.',
-				required: true,
-			},
+			...nodeOperationOptions
 		],
 	};
 
-	// The function below is responsible for actually doing whatever this node
-	// is supposed to do. In this case, we're just appending the `myString` property
-	// with whatever the user has entered.
-	// You can make async calls and use `await`.
 	async execute(this: IExecuteFunctions): Promise<INodeExecutionData[][]> {
 		const items = this.getInputData();
 
-		//let item: INodeExecutionData;
-		let fileUrl: string;
-		let arrayBuffer: ArrayBuffer;
+		let itemBinaryData: IBinaryKeyData;
+		let dataPropertyName: string;
+		let dataPropertyNameOut: string;
+		let jsonString: string;
+		let docFillConfigs: DocFillConfig[];
+		let docBinaryData: IBinaryData;
+		let docBuffer: Buffer;
 		let pdfDoc: PDFDocument;
 		let pdfForm: PDFForm;
 
 		const returnData: INodeExecutionData[] = [];
 
-
-		// Iterates over all input items and add the key "myString" with the
-		// value the parameter "myString" resolves to.
-		// (This could be a different value for each item in case it contains an expression)
 		for (let itemIndex = 0; itemIndex < items.length; itemIndex++) {
+				dataPropertyName = this.getNodeParameter('dataPropertyName', itemIndex, '') as string;
+				dataPropertyNameOut = this.getNodeParameter('dataPropertyNameOut', itemIndex, '') as string;
+				jsonString = this.getNodeParameter('configurationJson', itemIndex, '') as string;
+
 			try {
-				fileUrl = this.getNodeParameter('pdfUrl', itemIndex, '') as string;
+				itemBinaryData = items[itemIndex].binary as IBinaryKeyData;
+				docBinaryData = itemBinaryData[dataPropertyName] as IBinaryData;
 
-				arrayBuffer = await fetch(fileUrl).then(res => res.arrayBuffer());
+				console.log(itemBinaryData);
+				console.log(docBinaryData);
 
-				pdfDoc = await PDFDocument.load(arrayBuffer);
+				if(!isPDFDocument(docBinaryData)) {
+					throw new NodeOperationError(
+						this.getNode(),
+						`Input (on binary property "${dataPropertyName}") should be a PDF file, was ${docBinaryData.mimeType} instead`,
+						{ itemIndex },
+					);
+				}
 
-				console.log(pdfDoc);
+				docBuffer = await this.helpers.getBinaryDataBuffer(itemIndex, dataPropertyName);
+				pdfDoc = await PDFDocument.load(docBuffer);
 
 				pdfForm = pdfDoc.getForm();
 
-				let pdfTextField: PDFTextField = pdfForm.getTextField("Nom et prénom ou raison sociale_2");
-				pdfTextField.setText("Roman Muzikantov");
+				console.log(jsonString);
+
+				docFillConfigs = JSON.parse(jsonString);
+
+				console.log(docFillConfigs);
+
+				docFillConfigs.forEach((el) => {
+					fillForm(pdfForm, el);
+				})
 
 				let savedDoc = await pdfDoc.save();
 
-				console.log(savedDoc);
-
-				const binary = { 
-					["data"]: {
-						data: "",
-						fileName: 'fileName',
-						mimeType: 'mimeType'
-					} as IBinaryData
-				};
-				binary!['data'] = await this.helpers.prepareBinaryData(Buffer.from(savedDoc), 'test.pdf')
-
-				const json = {};
 				const result: INodeExecutionData = {
-					json,
-					binary
+					json: {
+						...items[itemIndex].json
+					},
+					binary: {
+						...items[itemIndex].binary,
+						[dataPropertyNameOut]: await this.helpers.prepareBinaryData(
+							Buffer.from(savedDoc), 
+							docBinaryData.fileName ? docBinaryData.fileName : dataPropertyNameOut + '.pdf', 
+							'application/pdf'
+						),
+					},
+					pairedItem: [items[itemIndex].pairedItem as IPairedItemData],
 				}
 
 				returnData.push(result);
 			} catch (error) {
-				// This node should never fail but we want to showcase how
-				// to handle errors.
 				if (this.continueOnFail()) {
 					items.push({ json: this.getInputData(itemIndex)[0].json, error, pairedItem: itemIndex });
 				} else {
-					// Adding `itemIndex` allows other workflows to handle this error
 					if (error.context) {
-						// If the error thrown already contains the context property,
-						// only append the itemIndex
 						error.context.itemIndex = itemIndex;
 						throw error;
 					}
